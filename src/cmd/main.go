@@ -6,11 +6,18 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/niyoko/family-assistant/src/infra"
+	openai "github.com/sashabaranov/go-openai"
+
+	_ "embed"
 )
+
+//go:embed system.txt
+var system string
 
 func respondWithError(status int, message string) ([]byte, error) {
 	body, err := json.Marshal(&struct {
@@ -35,7 +42,7 @@ func respondWithError(status int, message string) ([]byte, error) {
 	return respJson, nil
 }
 
-func GetHandler(bot *tgbotapi.BotAPI) infra.LambdaHandler {
+func GetHandler(bot *tgbotapi.BotAPI, openaiClient *openai.Client) infra.LambdaHandler {
 	return func(ctx context.Context, payload []byte) ([]byte, error) {
 		var decodedPayload *infra.GatewayEvent
 		err := json.Unmarshal(payload, &decodedPayload)
@@ -55,6 +62,39 @@ func GetHandler(bot *tgbotapi.BotAPI) infra.LambdaHandler {
 
 		if update.Message == nil {
 			return nil, fmt.Errorf("Not message update")
+		}
+
+		if strings.HasPrefix(update.Message.Text, "Buat cerita tentang ") {
+			story := update.Message.Text
+			story = strings.TrimSuffix(story, ".")
+			story = strings.TrimSpace(story)
+
+			req := openai.ChatCompletionRequest{
+				Messages: []openai.ChatCompletionMessage{
+					{
+						Role:    openai.ChatMessageRoleSystem,
+						Content: system,
+					},
+					{
+						Role:    openai.ChatMessageRoleUser,
+						Content: story,
+					},
+				},
+				Temperature: 1,
+				Model:       openai.GPT4TurboPreview,
+			}
+			resp, err := openaiClient.CreateChatCompletion(ctx, req)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create completion: %w", err)
+			}
+
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, resp.Choices[0].Message.Content)
+			_, err = bot.Send(msg)
+			if err != nil {
+				return nil, fmt.Errorf("failed to send message: %w", err)
+			}
+
+			return json.Marshal(map[string]bool{"ok": true})
 		}
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
@@ -91,7 +131,11 @@ func main() {
 		log.Panic(err)
 	}
 
-	handler := GetHandler(bot)
+	cfg := openai.DefaultConfig(os.Getenv("OPENAI_KEY"))
+	cfg.OrgID = os.Getenv("OPENAI_ORG")
+	client := openai.NewClientWithConfig(cfg)
+
+	handler := GetHandler(bot, client)
 	handler = WrapHandler(handler)
 	lambda.Start(handler)
 }
