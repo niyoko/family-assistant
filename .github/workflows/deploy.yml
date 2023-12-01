@@ -11,7 +11,7 @@ env:
   GOARCH: "amd64"
 
 jobs:
-  deploy:
+  deploy-receiver:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
         with:
           go-version: "1.21.4"
       - run: go get -d ./...
-      - run: go build -o ./main ./src/cmd
+      - run: go build -o ./main ./src/cmd/receiver
       - uses: montudor/action-zip@v1
         with:
           args: zip main.zip main
