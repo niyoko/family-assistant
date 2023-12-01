@@ -1,6 +1,10 @@
 package infra
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+	"log"
+)
 
 type GatewayEvent struct {
 	Version         string            `json:"version"`
@@ -41,4 +45,22 @@ type LambdaHandler func(ctx context.Context, payload []byte) ([]byte, error)
 
 func (handler LambdaHandler) Invoke(ctx context.Context, payload []byte) ([]byte, error) {
 	return handler(ctx, payload)
+}
+
+func WrapHandler(inner LambdaHandler) LambdaHandler {
+	return func(ctx context.Context, payload []byte) ([]byte, error) {
+		logItem := map[string]interface{}{
+			"payload": string(payload),
+		}
+		out, err := inner.Invoke(ctx, payload)
+		if err != nil {
+			logItem["error"] = err.Error()
+		} else {
+			logItem["response"] = string(out)
+		}
+
+		j, _ := json.Marshal(logItem)
+		log.Println(string(j))
+		return out, err
+	}
 }

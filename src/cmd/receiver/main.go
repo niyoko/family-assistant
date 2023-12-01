@@ -89,24 +89,6 @@ func GetHandler(sqsClient *sqs.Client) infra.LambdaHandler {
 	}
 }
 
-func WrapHandler(inner infra.LambdaHandler) infra.LambdaHandler {
-	return func(ctx context.Context, payload []byte) ([]byte, error) {
-		logItem := map[string]interface{}{
-			"payload": string(payload),
-		}
-		out, err := inner.Invoke(ctx, payload)
-		if err != nil {
-			logItem["error"] = err.Error()
-		} else {
-			logItem["response"] = string(out)
-		}
-
-		j, _ := json.Marshal(logItem)
-		log.Println(string(j))
-		return out, err
-	}
-}
-
 func main() {
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(os.Getenv("AWS_REGION")))
 	if err != nil {
@@ -116,6 +98,6 @@ func main() {
 	sqsClient := sqs.NewFromConfig(cfg)
 
 	handler := GetHandler(sqsClient)
-	handler = WrapHandler(handler)
+	handler = infra.WrapHandler(handler)
 	lambda.Start(handler)
 }

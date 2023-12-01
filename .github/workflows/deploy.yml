@@ -30,6 +30,29 @@ jobs:
           aws_region: ${{ secrets.AWS_REGION }}
           function_name: family-assistant
           zip_file: main.zip
+          memory_size: 128
+          timeout: 60
+          handler: main
+          runtime: go1.x
+  deploy-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.21.4"
+      - run: go get -d ./...
+      - run: go build -o ./main ./src/cmd/worker
+      - uses: montudor/action-zip@v1
+        with:
+          args: zip main.zip main
+      - uses: appleboy/lambda-action@master
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ secrets.AWS_REGION }}
+          function_name: family-assistant-worker
+          zip_file: main.zip
           memory_size: 256
           timeout: 240
           handler: main
