@@ -54,10 +54,16 @@ func GetHandler(bot *tgbotapi.BotAPI) infra.LambdaHandler {
 		}
 
 		if update.Message == nil {
-			return json.Marshal("")
+			return nil, fmt.Errorf("Not message update")
 		}
 
-		return json.Marshal(update.Message.Text)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
+		_, err = bot.Send(msg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to send message: %w", err)
+		}
+
+		return json.Marshal(map[string]bool{"ok": true})
 	}
 }
 
