@@ -61,11 +61,31 @@ func GetHandler(bot *tgbotapi.BotAPI) infra.LambdaHandler {
 	}
 }
 
+func WrapHandler(inner infra.LambdaHandler) infra.LambdaHandler {
+	return func(ctx context.Context, payload []byte) ([]byte, error) {
+		logItem := map[string]interface{}{
+			"payload": string(payload),
+		}
+		out, err := inner.Invoke(ctx, payload)
+		if err != nil {
+			logItem["error"] = err.Error()
+		} else {
+			logItem["response"] = string(out)
+		}
+
+		j, _ := json.Marshal(logItem)
+		log.Println(string(j))
+		return out, err
+	}
+}
+
 func main() {
 	bot, err := tgbotapi.NewBotAPI(os.Getenv("BOT_TOKEN"))
 	if err != nil {
 		log.Panic(err)
 	}
 
-	lambda.Start(GetHandler(bot))
+	handler := GetHandler(bot)
+	handler = WrapHandler(handler)
+	lambda.Start(handler)
 }
