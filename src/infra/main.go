@@ -27,6 +27,28 @@ type GatewayEvent struct {
 	Body string `json:"body"`
 }
 
+type SQSRecord struct {
+	MessageId     string `json:"messageId"`
+	ReceiptHandle string `json:"receiptHandle"`
+	Body          string `json:"body"`
+	Attributes    struct {
+		ApproximateReceiveCount          string `json:"ApproximateReceiveCount"`
+		AWSTraceHeader                   string `json:"AWSTraceHeader"`
+		SentTimestamp                    string `json:"SentTimestamp"`
+		SenderId                         string `json:"SenderId"`
+		ApproximateFirstReceiveTimestamp string `json:"ApproximateFirstReceiveTimestamp"`
+	} `json:"attributes"`
+	MessageAttributes map[string]interface{} `json:"messageAttributes"`
+	Md5OfBody         string                 `json:"md5OfBody"`
+	EventSource       string                 `json:"eventSource"`
+	EventSourceARN    string                 `json:"eventSourceARN"`
+	AwsRegion         string                 `json:"awsRegion"`
+}
+
+type SQSRecords struct {
+	Records []*SQSRecord `json:"Records"`
+}
+
 type Response struct {
 	Cookies         []string          `json:"cookies"`
 	IsBase64Encoded bool              `json:"isBase64Encoded"`
