@@ -39,6 +39,12 @@ func (p *processor) ProcessTask(ctx context.Context, bag map[string]any) {
 }
 
 func (p *processor) MakeStory(ctx context.Context, topic string) {
+	chatID, err := strconv.ParseInt(os.Getenv("CHAT_ID"), 10, 64)
+	if err != nil {
+		fmt.Printf("failed to parse chat id: %v", err)
+		return
+	}
+
 	req := openai.ChatCompletionRequest{
 		Messages: []openai.ChatCompletionMessage{
 			{
@@ -53,19 +59,17 @@ func (p *processor) MakeStory(ctx context.Context, topic string) {
 		Temperature: 1,
 		Model:       openai.GPT4TurboPreview,
 	}
+
+	p.bot.Send(tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping))
 	resp, err := p.openaiClient.CreateChatCompletion(ctx, req)
 	if err != nil {
 		fmt.Printf("failed to create completion: %v", err)
 		return
 	}
 
-	chatID, err := strconv.ParseInt(os.Getenv("CHAT_ID"), 10, 64)
-	if err != nil {
-		fmt.Printf("failed to parse chat id: %v", err)
-		return
-	}
-
 	content := resp.Choices[0].Message.Content
+
+	p.bot.Send(tgbotapi.NewChatAction(chatID, tgbotapi.ChatRecordVoice))
 	voice, err := p.openaiClient.CreateSpeech(ctx, openai.CreateSpeechRequest{
 		Model:          openai.TTSModel1,
 		Input:          content,
@@ -73,6 +77,7 @@ func (p *processor) MakeStory(ctx context.Context, topic string) {
 		Speed:          0.85,
 		ResponseFormat: openai.SpeechResponseFormatOpus,
 	})
+
 	if err != nil {
 		fmt.Printf("failed to create speech: %v", err)
 		return
@@ -80,6 +85,7 @@ func (p *processor) MakeStory(ctx context.Context, topic string) {
 
 	defer voice.Close()
 
+	p.bot.Send(tgbotapi.NewChatAction(chatID, tgbotapi.ChatUploadVoice))
 	msg := tgbotapi.NewVoice(chatID, tgbotapi.FileReader{
 		Name:   "Cerita.oog",
 		Reader: voice,
