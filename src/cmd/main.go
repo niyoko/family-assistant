@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/niyoko/family-assistant/src/infra"
 )
 
@@ -32,17 +35,37 @@ func respondWithError(status int, message string) ([]byte, error) {
 	return respJson, nil
 }
 
-func HandleRaw(ctx context.Context, payload []byte) ([]byte, error) {
-	var decodedPayload *infra.GatewayEvent
-	err := json.Unmarshal(payload, &decodedPayload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal payload: %w", err)
-	}
+func GetHandler(bot *tgbotapi.BotAPI) infra.LambdaHandler {
+	return func(ctx context.Context, payload []byte) ([]byte, error) {
+		var decodedPayload *infra.GatewayEvent
+		err := json.Unmarshal(payload, &decodedPayload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
 
-	fmt.Println(string(payload))
-	return nil, nil
+		if decodedPayload.Headers["x-telegram-bot-api-secret-token"] != os.Getenv("WEBHOOK_SECRET_TOKEN") {
+			return respondWithError(401, "Unauthorized")
+		}
+
+		var update tgbotapi.Update
+		err = json.Unmarshal([]byte(decodedPayload.Body), &update)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal update: %w", err)
+		}
+
+		if update.Message == nil {
+			return json.Marshal("")
+		}
+
+		return json.Marshal(update.Message.Text)
+	}
 }
 
 func main() {
-	lambda.Start(infra.LambdaHandler(HandleRaw))
+	bot, err := tgbotapi.NewBotAPI(os.Getenv("BOT_TOKEN"))
+	if err != nil {
+		log.Panic(err)
+	}
+
+	lambda.Start(GetHandler(bot))
 }
