@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/niyoko/family-assistant/src/utils"
+	"github.com/samber/lo"
 	openai "github.com/sashabaranov/go-openai"
 
 	_ "embed"
@@ -14,6 +18,8 @@ import (
 
 //go:embed system.txt
 var system string
+
+const MAX_LEN = 4075
 
 type processor struct {
 	bot          *tgbotapi.BotAPI
@@ -35,6 +41,20 @@ func (p *processor) ProcessTask(ctx context.Context, bag map[string]any) {
 		}
 
 		p.MakeStory(ctx, topic)
+	}
+}
+
+func (p *processor) sendTypingActionEveryThreeSeconds(ctx context.Context, chatID int64) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.bot.Send(tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping))
+		}
 	}
 }
 
@@ -60,7 +80,10 @@ func (p *processor) MakeStory(ctx context.Context, topic string) {
 		Model:       openai.GPT4TurboPreview,
 	}
 
-	p.bot.Send(tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping))
+	typingCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	go p.sendTypingActionEveryThreeSeconds(typingCtx, chatID)
 	resp, err := p.openaiClient.CreateChatCompletion(ctx, req)
 	if err != nil {
 		fmt.Printf("failed to create completion: %v", err)
@@ -68,31 +91,15 @@ func (p *processor) MakeStory(ctx context.Context, topic string) {
 	}
 
 	content := resp.Choices[0].Message.Content
+	lines := strings.Split(content, "\n")
+	lines = lo.Filter(lines, func(line string, _ int) bool { return line != "" })
 
-	p.bot.Send(tgbotapi.NewChatAction(chatID, tgbotapi.ChatRecordVoice))
-	voice, err := p.openaiClient.CreateSpeech(ctx, openai.CreateSpeechRequest{
-		Model:          openai.TTSModel1,
-		Input:          content,
-		Voice:          openai.VoiceNova,
-		Speed:          0.85,
-		ResponseFormat: openai.SpeechResponseFormatOpus,
-	})
-
-	if err != nil {
-		fmt.Printf("failed to create speech: %v", err)
-		return
-	}
-
-	defer voice.Close()
-
-	p.bot.Send(tgbotapi.NewChatAction(chatID, tgbotapi.ChatUploadVoice))
-	msg := tgbotapi.NewVoice(chatID, tgbotapi.FileReader{
-		Name:   "Cerita.oog",
-		Reader: voice,
-	})
-	_, err = p.bot.Send(msg)
-	if err != nil {
-		fmt.Printf("failed to send message: %v", err)
-		return
+	lineChunks := utils.ChunkLinesToMaxLen(lines, MAX_LEN)
+	for _, chunk := range lineChunks {
+		_, err := p.bot.Send(tgbotapi.NewMessage(chatID, strings.Join(chunk, "\n")))
+		if err != nil {
+			fmt.Printf("failed to send message: %v", err)
+			return
+		}
 	}
 }
